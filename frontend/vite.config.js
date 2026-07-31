@@ -4,13 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/password/',
+  base: './',
   plugins: [
     react(),
     tailwindcss()
   ],
   build: {
-    outDir: '../docs',
+    outDir: '../dist',
     emptyOutDir: true
   }
 })

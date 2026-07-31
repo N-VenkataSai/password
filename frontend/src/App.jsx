@@ -3,15 +3,29 @@ import Navbar from './components/Navbar';
 import Register from './components/Register';
 import Login from './components/Login';
 import Admin from './components/Admin';
+import { DEFAULT_IMAGES } from './data/defaultImages';
 
 const API_BASE = 'http://localhost:8080/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('login'); // login, register, admin
   const [backendConnected, setBackendConnected] = useState(false);
-  const [images, setImages] = useState([]);
-  const [registeredUsers, setRegisteredUsers] = useState([]);
-  const [registeredUsername, setRegisteredUsername] = useState('');
+  const [images, setImages] = useState(DEFAULT_IMAGES);
+  const [registeredUsers, setRegisteredUsers] = useState([
+    {
+      id: 1,
+      username: "demo_user",
+      createdAt: new Date().toISOString(),
+      passwordSequence: [
+        { sequenceOrder: 0, imageItem: DEFAULT_IMAGES[0] },  // Sunset Mountain
+        { sequenceOrder: 1, imageItem: DEFAULT_IMAGES[6] },  // Majestic Tiger
+        { sequenceOrder: 2, imageItem: DEFAULT_IMAGES[12] }, // Sleek Laptop
+        { sequenceOrder: 3, imageItem: DEFAULT_IMAGES[18] }, // Artisanal Pizza
+        { sequenceOrder: 4, imageItem: DEFAULT_IMAGES[24] }  // Vintage Camera
+      ]
+    }
+  ]);
+  const [registeredUsername, setRegisteredUsername] = useState('demo_user');
 
   // Check Spring Boot backend health & connection
   const checkBackendHealth = async () => {
@@ -30,6 +44,7 @@ export default function App() {
   };
 
   const fetchUsers = async () => {
+    if (!backendConnected) return;
     try {
       const res = await fetch(`${API_BASE}/users`);
       if (res.ok) {
@@ -42,6 +57,7 @@ export default function App() {
   };
 
   const fetchImages = async () => {
+    if (!backendConnected) return;
     try {
       const res = await fetch(`${API_BASE}/images`);
       if (res.ok) {
@@ -55,13 +71,27 @@ export default function App() {
 
   useEffect(() => {
     checkBackendHealth();
-    fetchUsers();
     const interval = setInterval(checkBackendHealth, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  const handleRegistrationSuccess = (username) => {
-    setRegisteredUsername(username);
+  useEffect(() => {
+    if (backendConnected) {
+      fetchUsers();
+      fetchImages();
+    }
+  }, [backendConnected]);
+
+  const handleRegistrationSuccess = (userObj) => {
+    if (typeof userObj === 'string') {
+      setRegisteredUsername(userObj);
+    } else if (userObj && userObj.username) {
+      setRegisteredUsername(userObj.username);
+      setRegisteredUsers(prev => [
+        ...prev.filter(u => u.username !== userObj.username),
+        userObj
+      ]);
+    }
     fetchUsers();
     setActiveTab('login');
   };
@@ -84,26 +114,33 @@ export default function App() {
         {activeTab === 'register' && (
           <Register
             API_BASE={API_BASE}
+            backendConnected={backendConnected}
             onRegistrationSuccess={handleRegistrationSuccess}
             images={images}
             fetchImages={fetchImages}
+            registeredUsers={registeredUsers}
+            setRegisteredUsers={setRegisteredUsers}
           />
         )}
 
         {activeTab === 'login' && (
           <Login
             API_BASE={API_BASE}
+            backendConnected={backendConnected}
             initialUsername={registeredUsername}
             registeredUsers={registeredUsers}
             fetchUsers={fetchUsers}
+            allImages={images}
           />
         )}
 
         {activeTab === 'admin' && (
           <Admin
             API_BASE={API_BASE}
+            backendConnected={backendConnected}
             registeredUsers={registeredUsers}
             images={images}
+            setImages={setImages}
             fetchUsers={fetchUsers}
             fetchImages={fetchImages}
           />

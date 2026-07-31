@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { User, CheckCircle, AlertCircle, RefreshCw, Trash2, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
+import { User, CheckCircle, AlertCircle, RefreshCw, Trash2, ArrowRight, Sparkles } from 'lucide-react';
 
-export default function Register({ API_BASE, onRegistrationSuccess, fetchImages, images }) {
+export default function Register({ API_BASE, backendConnected, onRegistrationSuccess, fetchImages, images, registeredUsers, setRegisteredUsers }) {
   const [username, setUsername] = useState('');
-  const [selectedSequence, setSelectedSequence] = useState([]); // Array of image objects
+  const [selectedSequence, setSelectedSequence] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [usernameAvailable, setUsernameAvailable] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -27,6 +27,13 @@ export default function Register({ API_BASE, onRegistrationSuccess, fetchImages,
       setUsernameAvailable(null);
       return;
     }
+
+    if (!backendConnected) {
+      const exists = registeredUsers.some(u => u.username.toLowerCase() === username.trim().toLowerCase());
+      setUsernameAvailable(!exists);
+      return;
+    }
+
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(`${API_BASE}/users/check/${encodeURIComponent(username.trim())}`);
@@ -37,12 +44,11 @@ export default function Register({ API_BASE, onRegistrationSuccess, fetchImages,
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [username, API_BASE]);
+  }, [username, API_BASE, backendConnected, registeredUsers]);
 
   const handleImageToggle = (image) => {
     const existingIndex = selectedSequence.findIndex(item => item.id === image.id);
     if (existingIndex !== -1) {
-      // Remove from sequence
       setSelectedSequence(selectedSequence.filter(item => item.id !== image.id));
     } else {
       if (selectedSequence.length >= 5) {
@@ -74,29 +80,45 @@ export default function Register({ API_BASE, onRegistrationSuccess, fetchImages,
     setLoading(true);
     setErrorMsg('');
 
-    try {
-      const payload = {
-        username: username.trim(),
-        imageIds: selectedSequence.map(img => img.id)
-      };
+    if (backendConnected) {
+      try {
+        const payload = {
+          username: username.trim(),
+          imageIds: selectedSequence.map(img => img.id)
+        };
 
-      const res = await fetch(`${API_BASE}/users/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+        const res = await fetch(`${API_BASE}/users/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
 
-      const data = await res.json();
-      if (res.ok) {
-        onRegistrationSuccess(username.trim());
-      } else {
-        setErrorMsg(data.message || 'Registration failed.');
+        const data = await res.json();
+        if (res.ok) {
+          onRegistrationSuccess(username.trim());
+        } else {
+          setErrorMsg(data.message || 'Registration failed.');
+        }
+      } catch (err) {
+        setErrorMsg('Network error connecting to Spring Boot server.');
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      setErrorMsg('Network error connecting to Spring Boot server.');
-      console.error(err);
-    } finally {
-      setLoading(false);
+    } else {
+      // Client-side fallback mode
+      setTimeout(() => {
+        const newUser = {
+          id: Date.now(),
+          username: username.trim(),
+          createdAt: new Date().toISOString(),
+          passwordSequence: selectedSequence.map((img, idx) => ({
+            sequenceOrder: idx,
+            imageItem: img
+          }))
+        };
+        onRegistrationSuccess(newUser);
+        setLoading(false);
+      }, 400);
     }
   };
 

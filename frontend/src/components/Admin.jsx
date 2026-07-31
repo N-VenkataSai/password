@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Plus, Trash2, Users, Image as ImageIcon, Sparkles, RefreshCw, X } from 'lucide-react';
+import { Database, Plus, Trash2, Users, Image as ImageIcon, X } from 'lucide-react';
 
-export default function Admin({ API_BASE, registeredUsers, images, fetchUsers, fetchImages }) {
-  const [activeTab, setActiveTab] = useState('users'); // users or images
+export default function Admin({ API_BASE, backendConnected, registeredUsers, images, setImages, fetchUsers, fetchImages }) {
+  const [activeTab, setActiveTab] = useState('users');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newImage, setNewImage] = useState({ name: '', url: '', category: 'Nature' });
   const [actionLoading, setActionLoading] = useState(false);
@@ -23,24 +23,36 @@ export default function Admin({ API_BASE, registeredUsers, images, fetchUsers, f
     setActionLoading(true);
     setStatusMsg('');
 
-    try {
-      const res = await fetch(`${API_BASE}/images`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newImage)
-      });
+    if (backendConnected) {
+      try {
+        const res = await fetch(`${API_BASE}/images`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newImage)
+        });
 
-      if (res.ok) {
-        setShowAddModal(false);
-        setNewImage({ name: '', url: '', category: 'Nature' });
-        fetchImages();
-      } else {
-        setStatusMsg('Failed to add new image.');
+        if (res.ok) {
+          setShowAddModal(false);
+          setNewImage({ name: '', url: '', category: 'Nature' });
+          fetchImages();
+        } else {
+          setStatusMsg('Failed to add new image.');
+        }
+      } catch (err) {
+        setStatusMsg('Error connecting to backend.');
+      } finally {
+        setActionLoading(false);
       }
-    } catch (err) {
-      console.error(err);
-      setStatusMsg('Error connecting to backend.');
-    } finally {
+    } else {
+      const addedImg = {
+        id: Date.now(),
+        name: newImage.name.trim(),
+        url: newImage.url.trim(),
+        category: newImage.category
+      };
+      setImages(prev => [...prev, addedImg]);
+      setShowAddModal(false);
+      setNewImage({ name: '', url: '', category: 'Nature' });
       setActionLoading(false);
     }
   };
@@ -48,18 +60,19 @@ export default function Admin({ API_BASE, registeredUsers, images, fetchUsers, f
   const handleDeleteImage = async (id) => {
     if (!window.confirm('Are you sure you want to remove this image from the library?')) return;
 
-    try {
-      const res = await fetch(`${API_BASE}/images/${id}`, {
-        method: 'DELETE'
-      });
-
-      if (res.ok) {
-        fetchImages();
-      } else {
-        alert('Failed to delete image.');
+    if (backendConnected) {
+      try {
+        const res = await fetch(`${API_BASE}/images/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          fetchImages();
+        } else {
+          alert('Failed to delete image.');
+        }
+      } catch (err) {
+        console.error(err);
       }
-    } catch (err) {
-      console.error(err);
+    } else {
+      setImages(prev => prev.filter(img => img.id !== id));
     }
   };
 

@@ -3,10 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { ShieldCheck, Lock, RefreshCw, CheckCircle2, XCircle, Grid, RotateCcw, Award, ArrowRight } from 'lucide-react';
 
-export default function Login({ API_BASE, initialUsername, registeredUsers, fetchUsers }) {
+export default function Login({ API_BASE, backendConnected, initialUsername, registeredUsers, fetchUsers, allImages }) {
   const [username, setUsername] = useState(initialUsername || '');
   const [gridSize, setGridSize] = useState(9); // 9 (3x3) or 16 (4x4)
-  const [session, setSession] = useState(null); // { sessionId, currentStep, gridImages, totalSteps }
+  const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [statusState, setStatusState] = useState('IDLE'); // IDLE, CHALLENGE, SUCCESS, FAILED
@@ -17,8 +17,20 @@ export default function Login({ API_BASE, initialUsername, registeredUsers, fetc
     fetchUsers();
     if (initialUsername) {
       setUsername(initialUsername);
+    } else if (registeredUsers.length > 0) {
+      setUsername(registeredUsers[0].username);
     }
-  }, [initialUsername]);
+  }, [initialUsername, registeredUsers]);
+
+  // Client-side challenge grid generator for fallback mode
+  const generateClientChallengeGrid = (targetImageItem, size) => {
+    const decoys = allImages.filter(img => img.id !== targetImageItem.id);
+    // Shuffle decoys
+    const shuffledDecoys = [...decoys].sort(() => 0.5 - Math.random());
+    const selectedDecoys = shuffledDecoys.slice(0, Math.max(8, size - 1));
+    const grid = [...selectedDecoys, targetImageItem];
+    return grid.sort(() => 0.5 - Math.random());
+  };
 
   const handleStartLogin = async (e) => {
     if (e) e.preventDefault();
@@ -31,35 +43,59 @@ export default function Login({ API_BASE, initialUsername, registeredUsers, fetc
     setMessage('');
     setStatusState('IDLE');
 
-    try {
-      const res = await fetch(`${API_BASE}/auth/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: username.trim(),
-          gridSize: gridSize
-        })
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSession({
-          sessionId: data.sessionId,
-          currentStep: data.currentStep,
-          gridImages: data.gridImages,
-          totalSteps: data.totalSteps || 5
+    if (backendConnected) {
+      try {
+        const res = await fetch(`${API_BASE}/auth/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: username.trim(),
+            gridSize: gridSize
+          })
         });
-        setStatusState('CHALLENGE');
-        setMessage(data.message);
-      } else {
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setSession({
+            sessionId: data.sessionId,
+            currentStep: data.currentStep,
+            gridImages: data.gridImages,
+            totalSteps: data.totalSteps || 5
+          });
+          setStatusState('CHALLENGE');
+          setMessage(data.message);
+        } else {
+          setStatusState('FAILED');
+          setMessage(data.message || 'User not found or password not configured.');
+        }
+      } catch (err) {
         setStatusState('FAILED');
-        setMessage(data.message || 'User not found or password not configured.');
+        setMessage('Network error connecting to authentication server.');
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error(err);
-      setStatusState('FAILED');
-      setMessage('Network error connecting to authentication server.');
-    } finally {
+    } else {
+      // Client-side fallback authentication mode
+      const user = registeredUsers.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+      if (!user || !user.passwordSequence || user.passwordSequence.length < 5) {
+        setStatusState('FAILED');
+        setMessage('User not found. Please register first.');
+        setLoading(false);
+        return;
+      }
+
+      const targetImg = user.passwordSequence[0].imageItem;
+      const initialGrid = generateClientChallengeGrid(targetImg, gridSize);
+
+      setSession({
+        sessionId: 'client-demo-session',
+        currentStep: 0,
+        gridImages: initialGrid,
+        totalSteps: 5,
+        targetUser: user
+      });
+      setStatusState('CHALLENGE');
+      setMessage('Step 1 of 5: Challenge loaded.');
       setLoading(false);
     }
   };
@@ -69,51 +105,75 @@ export default function Login({ API_BASE, initialUsername, registeredUsers, fetc
 
     setVerifying(true);
 
-    try {
-      const res = await fetch(`${API_BASE}/auth/verify-step`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: session.sessionId,
-          selectedImageId: imageId,
-          currentStep: session.currentStep,
-          gridSize: gridSize
-        })
-      });
+    if (backendConnected) {
+      try {
+        const res = await fetch(`${API_BASE}/auth/verify-step`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: session.sessionId,
+            selectedImageId: imageId,
+            currentStep: session.currentStep,
+            gridSize: gridSize
+          })
+        });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (data.finished) {
-        if (data.success) {
-          // Final victory! Trigger confetti
-          setStatusState('SUCCESS');
-          setMessage(data.message);
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 }
-          });
+        if (data.finished) {
+          if (data.success) {
+            setStatusState('SUCCESS');
+            setMessage(data.message);
+            confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+          } else {
+            setShakeGrid(true);
+            setTimeout(() => setShakeGrid(false), 600);
+            setStatusState('FAILED');
+            setMessage(data.message || 'Authentication Failed: Incorrect sequence.');
+          }
         } else {
-          // Authentication Failed!
-          setShakeGrid(true);
-          setTimeout(() => setShakeGrid(false), 600);
-          setStatusState('FAILED');
-          setMessage(data.message || 'Authentication Failed: Incorrect sequence.');
+          setSession({
+            ...session,
+            currentStep: data.currentStep,
+            gridImages: data.gridImages
+          });
+          setMessage(`Correct! Step ${data.currentStep + 1} of 5 loaded.`);
         }
+      } catch (err) {
+        setStatusState('FAILED');
+        setMessage('Error verifying challenge response.');
+      } finally {
+        setVerifying(false);
+      }
+    } else {
+      // Fallback verification mode
+      const currentStep = session.currentStep;
+      const expectedImgId = session.targetUser.passwordSequence[currentStep].imageItem.id;
+
+      if (imageId !== expectedImgId) {
+        setShakeGrid(true);
+        setTimeout(() => setShakeGrid(false), 600);
+        setStatusState('FAILED');
+        setMessage('Authentication Failed: Incorrect image selected.');
+        setVerifying(false);
+        return;
+      }
+
+      const nextStep = currentStep + 1;
+      if (nextStep >= 5) {
+        setStatusState('SUCCESS');
+        setMessage('Login Successful! Graphical password sequence verified.');
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       } else {
-        // Correct step -> shuffle decoys and load next step!
+        const nextTargetImg = session.targetUser.passwordSequence[nextStep].imageItem;
+        const newGrid = generateClientChallengeGrid(nextTargetImg, gridSize);
         setSession({
           ...session,
-          currentStep: data.currentStep,
-          gridImages: data.gridImages
+          currentStep: nextStep,
+          gridImages: newGrid
         });
-        setMessage(`Correct! Step ${data.currentStep + 1} of 5 loaded.`);
+        setMessage(`Correct! Step ${nextStep + 1} of 5 loaded.`);
       }
-    } catch (err) {
-      console.error(err);
-      setStatusState('FAILED');
-      setMessage('Error verifying challenge response.');
-    } finally {
       setVerifying(false);
     }
   };

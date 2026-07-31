@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+target/
+.mvn/wrapper/maven-wrapper.jar
+
+# Build outputs
+dist/
+build/
+*.jar
+*.war
+
+# Environment & IDE
+.env
+.env.local
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# OS files
+Thumbs.db
+Desktop.ini
